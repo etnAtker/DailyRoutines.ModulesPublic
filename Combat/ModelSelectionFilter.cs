@@ -141,8 +141,7 @@ public unsafe class ModelSelectionFilter : ModuleBase
                 (
                     "删除规则",
                     FontAwesomeIcon.TrashAlt,
-                    DailyRoutines.Manager.LanguageManager.Get("Delete"),
-                    false
+                    Manager.LanguageManager.Get("Delete")
                 ))
                 removeIndex = i;
         }
