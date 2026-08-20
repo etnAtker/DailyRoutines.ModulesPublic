@@ -29,11 +29,12 @@ public unsafe class ModelSelectionFilter : ModuleBase
     public override ModuleInfo Info { get; } = new()
     {
         Title = "目标模型选择过滤",
-        Description = "根据战斗状态及目标与自身的状态条件, 过滤左键点击模型选中玩家或敌人",
+        Description = "根据战斗状态及目标与自身的状态条件, 过滤左键点击模型或铭牌选中玩家或敌人",
         Category = ModuleCategory.System,
         Author = ["etnAtker"]
     };
 
+    private Hook<InputManager.Delegates.GetInputStatus>? getInputStatusHook;
     private Hook<TargetSystem.Delegates.GetMouseOverObject>? getMouseOverObjectHook;
 
     private Config config = null!;
@@ -41,6 +42,14 @@ public unsafe class ModelSelectionFilter : ModuleBase
     protected override void Init()
     {
         config = Config.Load(this) ?? new();
+
+        getInputStatusHook = DService.Instance().Hook.HookFromMemberFunction
+        (
+            typeof(InputManager.MemberFunctionPointers),
+            "GetInputStatus",
+            (InputManager.Delegates.GetInputStatus)GetInputStatusDetour
+        );
+        getInputStatusHook.Enable();
 
         getMouseOverObjectHook = DService.Instance().Hook.HookFromMemberFunction
         (
@@ -71,7 +80,7 @@ public unsafe class ModelSelectionFilter : ModuleBase
     {
         using var scope = ImRaii.PushId(id);
 
-        if (ImGui.Checkbox($"禁用通过点击模型选中{targetType}", ref filter.Enabled))
+        if (ImGui.Checkbox($"禁用通过点击模型或铭牌选中{targetType}", ref filter.Enabled))
             config.Save(this);
 
         using var indent = ImRaii.PushIndent();
@@ -197,6 +206,25 @@ public unsafe class ModelSelectionFilter : ModuleBase
         ImGui.TextUnformatted($"{statusRow.Name.ToString()}");
     }
 
+    private bool GetInputStatusDetour
+    (
+        InputManager* inputManager,
+        InputCode inputCode
+    )
+    {
+        var status = getInputStatusHook.Original(inputManager, inputCode);
+
+        if (!status || inputCode != InputCode.MOUSE_OK) return status;
+
+        var targetSystem = TargetSystem.Instance();
+        if (targetSystem == null) return status;
+
+        var target = targetSystem->MouseOverNameplateTarget;
+        if (target == null || target == targetSystem->GetTargetObject()) return status;
+
+        return !ShouldFilter(target);
+    }
+
     private GameObject* GetMouseOverObjectDetour
     (
         TargetSystem* system,
@@ -210,7 +238,7 @@ public unsafe class ModelSelectionFilter : ModuleBase
 
         if (target == null ||
             target == system->GetTargetObject() ||
-            !InputManager.Instance()->GetInputStatus(InputCode.MOUSE_OK))
+            !getInputStatusHook.Original(InputManager.Instance(), InputCode.MOUSE_OK))
             return target;
 
         if (ShouldFilter(target)) return null;
